@@ -1,55 +1,59 @@
-module Digital_LEDs (
-   input wire        clk,
-   input wire        rst,
-   input wire [31:0] addr,
-   input wire        wen,
-   input wire [31:0] wdata,
-   
-   output wire[ 7:0] dig_en,
-   output reg        DN_A,
-   output reg        DN_B,
-   output reg        DN_C,
-   output reg        DN_D,
-   output reg        DN_E,
-   output reg        DN_F,
-   output reg        DN_G,
-   output reg        DN_DP
+`timescale 1ns / 1ps
+
+module Digital_LEDs #(
+    parameter FREQ = 100
+)(
+    input wire dig_rst,
+    input wire dig_clk,
+    input wire [31:0] dig_addr,
+    input wire dig_we,
+    input wire [31:0] dig_wdata,
+    output reg [7:0] dig_en,
+    output reg [7:0] dig_dn
 );
-   
-    wire [63:0] r;
-    reg  [31:0] wD;
-    
-    always @(posedge clk or posedge rst) begin      
-        if(rst)                             wD <= 32'b0;
-        else if(wen && addr == 12'h000)     wD <= wdata;      
-        else                                wD <= wD;
-    end
-    
-    wire [31:0] wdata_pro = wD;
-    
-    Nixie_tube u_Nixie_tube_7(.clk(clk),.rst(rst),.DIG(wdata_pro[31:28]),.SEGMENT(r[7:0]));
-    Nixie_tube u_Nixie_tube_6(.clk(clk),.rst(rst),.DIG(wdata_pro[27:24]),.SEGMENT(r[15:8]));
-    Nixie_tube u_Nixie_tube_5(.clk(clk),.rst(rst),.DIG(wdata_pro[23:20]),.SEGMENT(r[23:16]));
-    Nixie_tube u_Nixie_tube_4(.clk(clk),.rst(rst),.DIG(wdata_pro[19:16]),.SEGMENT(r[31:24]));
-    Nixie_tube u_Nixie_tube_3(.clk(clk),.rst(rst),.DIG(wdata_pro[15:12]),.SEGMENT(r[39:32]));
-    Nixie_tube u_Nixie_tube_2(.clk(clk),.rst(rst),.DIG(wdata_pro[11:8]),.SEGMENT(r[47:40]));
-    Nixie_tube u_Nixie_tube_1(.clk(clk),.rst(rst),.DIG(wdata_pro[7:4]),.SEGMENT(r[55:48]));
-    Nixie_tube u_Nixie_tube_0(.clk(clk),.rst(rst),.DIG(wdata_pro[3:0]),.SEGMENT(r[63:56]));
- 
+    reg [15:0] cnt;
+    reg [31:0] data;
+    reg [2:0] idx;
+
     always @(*) begin
-        case(dig_en) 
-            8'b1111_1110:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[63:56];
-            8'b1111_1101:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[55:48];
-            8'b1111_1011:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[47:40];
-            8'b1111_0111:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[39:32];
-            8'b1110_1111:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[31:24];
-            8'b1101_1111:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[23:16];
-            8'b1011_1111:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[15:8];
-            8'b0111_1111:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = r[7:0];
-            default:  {DN_A,DN_B,DN_C,DN_D,DN_E,DN_F,DN_G,DN_DP} = 8'b1111_1111;
+        dig_en <= 8'b1 << idx;
+        case (data[(idx * 4) +: 4])
+            4'h0: dig_dn <= 8'b0011_1111;
+            4'h1: dig_dn <= 8'b0000_0110;
+            4'h2: dig_dn <= 8'b0101_1011;
+            4'h3: dig_dn <= 8'b0100_1111;
+            4'h4: dig_dn <= 8'b0110_0110;
+            4'h5: dig_dn <= 8'b0110_1101;
+            4'h6: dig_dn <= 8'b0111_1101;
+            4'h7: dig_dn <= 8'b0000_0111;
+            4'h8: dig_dn <= 8'b0111_1111;
+            4'h9: dig_dn <= 8'b0110_1111;
+            4'hA: dig_dn <= 8'b0111_0111;
+            4'hB: dig_dn <= 8'b0111_1100;
+            4'hC: dig_dn <= 8'b0011_1001;
+            4'hD: dig_dn <= 8'b0101_1110;
+            4'hE: dig_dn <= 8'b0111_1001;
+            4'hF: dig_dn <= 8'b0111_0001;
+            default: dig_dn <= 8'b0000_0000;
         endcase
     end
 
-    timer u_timer(.clk(clk),.rst(rst),.wen(wen),.led_en(dig_en));
+    always @(posedge dig_clk or posedge dig_rst) begin
+        if (dig_rst) begin
+            cnt <= FREQ;
+            idx <= 3'b0;
+            data <= 32'b0;
+        end else begin
+            if (dig_we) begin
+                data <= dig_wdata;
+            end
+            if (cnt == 16'b0) begin
+                cnt <= FREQ;
+                idx <= idx + 1;
+            end else begin
+                cnt <= cnt - 1;
+            end
+        end
+    end
 
-endmodule //Digital_LEDs
+endmodule

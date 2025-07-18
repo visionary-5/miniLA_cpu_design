@@ -1,25 +1,31 @@
+`timescale 1ns / 1ps
 `include "defines.vh"
 
-module NPC(
-    input wire  [1:0 ] op,       //from controller
-    input wire  [31:0] pc,
-    input wire         br,
-    input wire  [31:0] alu_result,
-    input wire  [31:0] offset,
-    output wire [31:0] pc4,
-    output reg  [31:0] npc
+// ========================================================
+// NPC —— Next PC (程序计数器更新单元)
+// 控制PC的更新方式：顺序、偏移、条件分支、绝对跳转
+// ========================================================
+module NPC (
+    // 跳转类型选择信号
+    input   wire  [1:0]   npc_op,   // 下一PC选择方式      
+    input   wire  [31:0]  alu_c,    // 绝对跳转目标
+    input   wire  [31:0]  pc,       // 当前PC值
+    input   wire  [31:0]  sext,     // 立即数扩展偏移
+    input   wire          br,       // 条件分支比较结果
+
+    output  wire  [31:0]  npc,      // 下一条指令PC
+    output  wire  [31:0]  pc4       // 顺序PC+4
 );
 
-    assign pc4 = pc + 32'd4; 
+    // 顺序执行默认PC+4
+    assign pc4 = pc + 4;
 
-    always @ (*) begin
-        case(op)
-            `NPC_PC4: npc = pc + 32'd4;                        //pc+4
-            `NPC_BEQ: npc = br? (pc + offset) : (pc + 32'd4);  //branch
-            `NPC_JMP: npc = pc + offset;                       //jal:pc+offset
-            `NPC_ALU: npc = alu_result;                        //jalr:rd1+offset
-            default:  npc = pc + 32'd4;
-        endcase
-    end
+    // 综合所有跳转和分支方式
+    assign npc =
+        (npc_op == `NPC_SEL_PC_PLUS_4)      ? (pc + 4) :
+        (npc_op == `NPC_SEL_PC_PLUS_OFFSET) ? (pc + sext) :
+        (npc_op == `NPC_SEL_BRANCH_COND)    ? (br ? pc + sext : pc + 4) :
+        (npc_op == `NPC_SEL_OFFSET_ABS)     ? alu_c :
+        32'b0;
 
 endmodule

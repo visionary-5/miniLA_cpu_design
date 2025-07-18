@@ -1,16 +1,11 @@
+`timescale 1ns / 1ps
 module switch(
-    input  wire         rst,
-    input  wire         clk,
-    input  wire [11:0]  addr,
-    input  wire [23:0]  switch,
-    output reg  [31:0]  rdata
+    input  wire        rst,
+    input  wire        clk,
+    input  wire [31:0] addr,    // 直接用32位，方便Bridge兼容
+    input  wire [15:0] switch,
+    output wire [31:0] rdata
 );
-    always @(*) begin
-        if(rst) begin
-            rdata = 32'd0;
-        end else begin
-            rdata = {8'd0, switch};
-        end
-    end
-
+    assign rdata = {16'b0, switch};
+    
 endmodule

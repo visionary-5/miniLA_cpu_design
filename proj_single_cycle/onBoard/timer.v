@@ -1,33 +1,45 @@
-module timer(
-    input wire clk,         
-    input wire rst,        
-    input wire wen,     
-    output reg [7:0]led_en      
-);  
-    
-    reg clock_inc;
-    wire clock_end;
-    reg [24:0]clock;
+`timescale 1ns / 1ps
 
-    always @(posedge clk or posedge rst) begin      
-        if(rst)              clock_inc <= 1'b0;
-        else if(wen)        clock_inc <= 1'b1;
-        else                clock_inc <= clock_inc;
+module timer (
+    input wire timer_rst,
+    input wire timer_clk,
+    input wire [31:0] timer_addr,
+    input wire timer_wen,
+    input wire [31:0] timer_raw_wdata,
+    output reg [31:0] timer_rdata
+);
+
+    reg [31:0] value;
+    reg [31:0] div;
+    reg [31:0] cnt;
+
+    always @(*) begin
+        case (timer_addr[2:0])
+            3'b000: timer_rdata <= value;
+            default: timer_rdata <= 32'hffffffff;
+        endcase
     end
 
-    assign clock_end = clock_inc & (clock==25'd29999);  
+    always @(posedge timer_clk or posedge timer_rst) begin
+        if (timer_rst) begin
+            value <= 32'b0;
+            div <= 32'd0;
+            cnt <= 32'b0;
+        end else begin
+            if (timer_wen) begin
+                case (timer_addr[2:0])
+                    3'b000: value <= timer_raw_wdata;
+                    3'b100: div <= timer_raw_wdata;
+                endcase
+            end
 
-    always @(posedge clk or posedge rst) begin      
-        if(rst)     clock <= 25'd0;
-        else if(clock_end)   clock <= 25'd0;
-        else if(clock_inc)     clock <= clock + 25'd1;
-        else   clock <= clock;
+            if (cnt < div) begin
+                cnt <= cnt + 1;
+            end else begin
+                value <= value + 1;
+                cnt <= 32'b0;
+            end
+        end
     end
 
-    always @(posedge clk or posedge rst) begin      //刷新频率设置2ms
-        if(rst)   led_en <= 8'b1111_1110;
-        else if(clock_end)    led_en <= {led_en[6:0],led_en[7]};  
-        else    led_en <= led_en;
-    end
-
-endmodule //timer
+endmodule

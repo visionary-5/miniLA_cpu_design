@@ -3,7 +3,8 @@
 `include "defines.vh"
 
 module miniLA_SoC (
-    input  wire         fpga_rst,   // Low active
+    input wire         fpga_rstn,   // low active
+    //input  wire         fpga_rst,   // high active
     input  wire         fpga_clk,
 
     input  wire [15:0]  sw,
@@ -19,14 +20,14 @@ module miniLA_SoC (
     output wire         DN_DP0, DN_DP1,
     output wire [15:0]  led
 
-`ifdef RUN_TRACE
+/*`ifdef RUN_TRACE
     ,// Debug Interface
     output wire         debug_wb_have_inst, // 当前时钟周期是否有指令写回 (对单周期CPU，可在复位后恒置1)
     output wire [31:0]  debug_wb_pc,        // 当前写回的指令的PC (若wb_have_inst=0，此项可为任意值)
     output              debug_wb_ena,       // 指令写回时，寄存器堆的写使能 (若wb_have_inst=0，此项可为任意值)
     output wire [ 4:0]  debug_wb_reg,       // 指令写回时，写入的寄存器号 (若wb_ena或wb_have_inst=0，此项可为任意值)
     output wire [31:0]  debug_wb_value      // 指令写回时，写入寄存器的值 (若wb_ena或wb_have_inst=0，此项可为任意值)
-`endif
+`endif*/
 );
 
     wire        pll_lock;
@@ -56,10 +57,35 @@ module miniLA_SoC (
     wire [31:0]  wdata_bridge2dram;
     
     // Interface between bridge and peripherals
-    // TODO: 在此定义总线桥与外设I/O接口电路模块的连接信号
-    //
+    wire        rst_to_dig;
+    wire        clk_to_dig;
+    wire [31:0] addr_to_dig;
+    wire        we_to_dig;
+    wire [31:0] wdata_to_dig;
+    wire [7:0]   dig_dn;
 
+    wire        rst_to_led;
+    wire        clk_to_led;
+    wire [31:0] addr_to_led;
+    wire        we_to_led;
+    wire [31:0] wdata_to_led;
 
+    wire        rst_to_sw;
+    wire        clk_to_sw;
+    wire [31:0] addr_to_sw;
+    wire [31:0] rdata_from_sw;
+
+    wire        rst_to_btn;
+    wire        clk_to_btn;
+    wire [31:0] addr_to_btn;
+    wire [31:0] rdata_from_btn;
+
+    wire        rst_to_timer;
+    wire        clk_to_timer;
+    wire [31:0] addr_to_timer;
+    wire        we_to_timer;
+    wire [31:0] wdata_to_timer;
+    wire [31:0] rdata_from_timer;
 
     assign DN_A1 = DN_A0;
     assign DN_B1 = DN_B0;
@@ -70,8 +96,9 @@ module miniLA_SoC (
     assign DN_G1 = DN_G0;
     assign DN_DP1 = DN_DP0;
     
-
-    
+    // 添加数码管段信号连接
+    assign {DN_DP0, DN_G0, DN_F0, DN_E0, DN_D0, DN_C0, DN_B0, DN_A0} = dig_dn;
+  
 `ifdef RUN_TRACE
     // Trace调试时，直接使用外部输入时钟
     assign cpu_clk = fpga_clk;
@@ -87,7 +114,7 @@ module miniLA_SoC (
 `endif
     
     myCPU Core_cpu (
-        .cpu_rst            (fpga_rst),
+        .cpu_rst            (!fpga_rstn),
         .cpu_clk            (cpu_clk),
 
         // Interface to IROM
@@ -117,7 +144,7 @@ module miniLA_SoC (
     
     Bridge Bridge (       
         // Interface to CPU
-        .rst_from_cpu       (fpga_rst),        // 修正变量名
+        .rst_from_cpu       (!fpga_rstn),       
         .clk_from_cpu       (cpu_clk),
         .addr_from_cpu      (Bus_addr),
         .we_from_cpu        (Bus_we),          // 这里是单bit
@@ -133,30 +160,38 @@ module miniLA_SoC (
         .wdata_to_dram      (wdata_bridge2dram),
         
         // Interface to 7-seg digital LEDs
-        .rst_to_dig         (/* TODO */),
-        .clk_to_dig         (/* TODO */),
-        .addr_to_dig        (/* TODO */),
-        .we_to_dig          (/* TODO */),
-        .wdata_to_dig       (/* TODO */),
+        .rst_to_dig         (rst_to_dig),
+        .clk_to_dig         (clk_to_dig),
+        .addr_to_dig        (addr_to_dig),
+        .we_to_dig          (we_to_dig),
+        .wdata_to_dig       (wdata_to_dig),
 
         // Interface to LEDs
-        .rst_to_led         (/* TODO */),
-        .clk_to_led         (/* TODO */),
-        .addr_to_led        (/* TODO */),
-        .we_to_led          (/* TODO */),
-        .wdata_to_led       (/* TODO */),
+        .rst_to_led         (rst_to_led),
+        .clk_to_led         (clk_to_led),
+        .addr_to_led        (addr_to_led),
+        .we_to_led          (we_to_led),
+        .wdata_to_led       (wdata_to_led),
 
         // Interface to switches
-        .rst_to_sw          (/* TODO */),
-        .clk_to_sw          (/* TODO */),
-        .addr_to_sw         (/* TODO */),
-        .rdata_from_sw      (/* TODO */),
+        .rst_to_sw          (rst_to_sw),
+        .clk_to_sw          (clk_to_sw),
+        .addr_to_sw         (addr_to_sw),
+        .rdata_from_sw      (rdata_from_sw),
 
         // Interface to buttons
-        .rst_to_btn         (/* TODO */),
-        .clk_to_btn         (/* TODO */),
-        .addr_to_btn        (/* TODO */),
-        .rdata_from_btn     (/* TODO */)
+        .rst_to_btn         (rst_to_btn),
+        .clk_to_btn         (clk_to_btn),
+        .addr_to_btn        (addr_to_btn),
+        .rdata_from_btn     (rdata_from_btn),
+
+        // Interface to timer
+        .rst_to_timer       (rst_to_timer),
+        .clk_to_timer       (clk_to_timer),
+        .addr_to_timer      (addr_to_timer),
+        .we_to_timer        (we_to_timer),
+        .wdata_to_timer     (wdata_to_timer),
+        .rdata_from_timer   (rdata_from_timer)
     );
 
     DRAM Mem_DRAM (
@@ -167,8 +202,57 @@ module miniLA_SoC (
         .spo        (rdata_dram2bridge)
     );
     
-    // TODO: 在此实例化你的外设I/O接口电路模块
-    //
+    // TODO: 在此实例化你的外设I/O接口电路模块u_
+        // 数码管显示（端口已标准化）
+    Digital_LEDs #(.FREQ(50000)) u_Digital_LEDS(
+        .dig_clk            (clk_to_dig),
+        .dig_rst            (rst_to_dig),
+        .dig_addr           (addr_to_dig),
+        .dig_we             (we_to_dig),
+        .dig_wdata          (wdata_to_dig),
+        .dig_en             (dig_en),
+        .dig_dn             (dig_dn)
+    );
+
+
+    // LED 灯
+    led u_led(
+        .rst  (rst_to_led),
+        .clk  (clk_to_led),
+        .addr (addr_to_led), 
+        .we   (we_to_led),      
+        .wdata (wdata_to_led),
+        .led   (led)                // 16位对接外部
+    );
+
+    // 拨码开关
+    switch u_switch(
+        .rst    (rst_to_sw),
+        .clk    (clk_to_sw),
+        .addr   (addr_to_sw),
+        .switch (sw),
+        .rdata  (rdata_from_sw)
+    );
+
+    // 按键
+    button u_button(
+        .rst(rst_to_btn),
+        .clk(clk_to_btn),
+        .addr(addr_to_btn),
+        .button_input (button),
+        .rdata(rdata_from_btn)
+    );
+
+    // 定时器
+    timer u_timer(
+        .timer_rst(rst_to_timer),
+        .timer_clk(clk_to_timer),
+        .timer_addr(addr_to_timer),
+        .timer_wen(we_to_timer),
+        .timer_raw_wdata(wdata_to_timer),
+        .timer_rdata(rdata_from_timer)
+    );
+
 
 
 endmodule
