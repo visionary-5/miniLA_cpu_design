@@ -1,85 +1,87 @@
 `timescale 1ns / 1ps
+
 `include "defines.vh"
 
-// =============================================================
-// RF —— 通用寄存器堆模块（Register File）- 流水线版本
-// 支持两个读端口和一个写端口，写回方式多样，0号寄存器恒为零
-// =============================================================
+// 通用寄存器堆模块
 module RF (
-    output  wire  [31:0]  rf_rD1,    // 读端口1
-    output  wire  [31:0]  rf_rD2,    // 读端口2
+    input   wire          rf_rst,
+    input   wire          rf_clk,
 
-    input   wire          rf_clk,    // 写时钟信号
-    input   wire          rf_rst,    // 异步复位
-    input   wire  [31:0]  inst_ID,   // ID阶段指令（用于读操作）
-    input   wire  [31:0]  inst_WB,   // WB阶段指令（用于写操作）
-    input   wire          rf_sel,    // 读端口2选择信号 (ID阶段)
-    input   wire          wb_ena,    // 写回使能 (WB阶段)
+    input   wire  [31:0]  inst1, // 用于译码阶段
+    input   wire  [31:0]  inst2, // 用于回写阶段
 
-    // 写回数据多路选择与数据源 (WB阶段)
+    // 可能的rR1和rR2选择
+    input   wire rf_sel,
+
+    input   wire wb_ena,
+    input   wire  [4:0]   wb_reg,
+
+    // 用于load-use冒险，
+    // 在MEM阶段获取回写数据
+    // 需要支持字节/半字写回
+    input   wire  [4:0]   ID_wb_reg,
+    output  wire  [31:0]  ID_wb_reg_value,
+
+    // 可能的写回数据选择
     input   wire  [2:0]   wD_sel,
     input   wire  [31:0]  alu_c,
     input   wire  [31:0]  sext2,
     input   wire  [31:0]  pc4,
-    input   wire  [31:0]  rdo
+    input   wire  [31:0]  rdo,
+
+    output  wire  [31:0]  rf_rD1,
+    output  wire  [31:0]  rf_rD2
 
 `ifdef RUN_TRACE
-    ,output wire [4:0]   debug_wb_reg,
-    output wire [31:0]   debug_wb_value
+    ,// 调试接口
+    output wire [31:0]  debug_wb_value
 `endif
 );
 
-    // =============== 32×32 位寄存器阵列 ===============
-    reg [31:0] register [0:31];
+    // 32个32位寄存器
+    reg  [31:0]  register [0:31];
 
-    // =============== 指令字段分解（寄存器索引） ===============
-    // 读操作使用ID阶段指令
-    wire [4:0] reg_rj_ID = inst_ID[9:5];     // 读端口1
-    wire [4:0] reg_rk_ID = inst_ID[14:10];   // 读端口2
-    wire [4:0] reg_rd_ID = inst_ID[4:0];     // 读端口2备选
-    
-    // 写操作使用WB阶段指令
-    wire [4:0] reg_rd_WB = inst_WB[4:0];     // 写端口
+    // 指令字段提取
+    wire [4:0] reg1 = inst1[9:5];    // rj
+    wire [4:0] reg2 = inst1[14:10];  // rk
+    wire [4:0] reg3 = inst1[4:0];    // rd
 
-    // =============== 异步读出 ===============
-    assign rf_rD1 = register[reg_rj_ID];
+    assign ID_wb_reg_value = register[ID_wb_reg];
 
-    assign rf_rD2 = (rf_sel == `RF_SEL_RK) ? register[reg_rk_ID] :
-                    (rf_sel == `RF_SEL_RD) ? register[reg_rd_ID] :
+    // 读操作为非阻塞
+    // 读出寄存器1
+    assign rf_rD1 = register[reg1];
+
+    // 读出寄存器2
+    assign rf_rD2 = (rf_sel == `RF_SEL_RK) ? register[reg2] :
+                    (rf_sel == `RF_SEL_RD) ? register[reg3] :
                     32'b0;
 
-    // =============== 写端口判定 ===============
-    // WD_PC4_R1 为特殊写回类型，写1号寄存器
-    wire [4:0] wb_reg = (wD_sel != `WB_SEL_PC4_R1) ? reg_rd_WB : 5'b00001;
+    // 写回数据选择
+    wire [31:0] wb_value = 
+                        (wD_sel == `WB_SEL_ALU_RESULT) ? alu_c :
+                        (wD_sel == `WB_SEL_EXT2_RESULT) ? sext2 :
+                        (wD_sel == `WB_SEL_DRAM_BYTE) ? {register[wb_reg][31:8], rdo[7:0]} :
+                        (wD_sel == `WB_SEL_DRAM_HALF) ? {register[wb_reg][31:16], rdo[15:0]} :
+                        (wD_sel == `WB_SEL_DRAM_WORD) ? rdo :
+                        (wD_sel == `WB_SEL_INST) ? {inst2[24:5], 12'b0} :
+                        (wD_sel == `WB_SEL_PC4_RD) ? pc4 :
+                        (wD_sel == `WB_SEL_PC4_R1) ? pc4 :
+                        32'b0; 
 
-    // =============== 写回数据多路选择 ===============
-    wire [31:0] wb_value =
-        (wD_sel == `WB_SEL_ALU_RESULT)  ? alu_c :
-        (wD_sel == `WB_SEL_EXT2_RESULT) ? sext2 :
-        (wD_sel == `WB_SEL_DRAM_BYTE)   ? {register[wb_reg][31:8],  rdo[7:0]} :
-        (wD_sel == `WB_SEL_DRAM_HALF)   ? {register[wb_reg][31:16], rdo[15:0]} :
-        (wD_sel == `WB_SEL_DRAM_WORD)   ? rdo :
-        (wD_sel == `WB_SEL_INST)        ? {inst_WB[24:5], 12'b0} :
-        (wD_sel == `WB_SEL_PC4_RD)      ? pc4 :
-        (wD_sel == `WB_SEL_PC4_R1)      ? pc4 :
-        32'b0;
-
-    // =============== 写时钟写入 ===============
-    always @(posedge rf_clk or posedge rf_rst) begin
+    always @(posedge rf_rst or posedge rf_clk) begin
         if (rf_rst) begin
-            // 可选：复位时全部清零
-            // integer i; for(i=0;i<32;i=i+1) register[i] <= 32'b0;
+            // 复位时只清零r0
+            register[0] <= 32'b0;
         end else begin
-            if (wb_ena) begin
-                // 0号寄存器恒为零，不允许写入
-                register[wb_reg] <= (wb_reg == 0) ? 32'b0 : wb_value;
+            if (wb_ena && wb_reg != 0) begin
+                // 不允许修改r0
+                register[wb_reg] <= wb_value;
             end
         end
     end
 
 `ifdef RUN_TRACE
-    // Trace调试接口输出
-    assign debug_wb_reg   = wb_reg;
     assign debug_wb_value = wb_value;
 `endif
 

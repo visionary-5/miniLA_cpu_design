@@ -81,3 +81,4 @@
 `define PERI_ADDR_LED   32'hFFFF_F060   // LED灯输出端口基地址
 `define PERI_ADDR_SW    32'hFFFF_F070   // 拨码开关输入端口基地址
 `define PERI_ADDR_BTN   32'hFFFF_F078   // 按键输入端口基地址
+`define PERI_ADDR_TIMER 32'hFFFF_F020   // UART串口通信端口基地址

@@ -1,17 +1,28 @@
 `timescale 1ns / 1ps
 
-module PC(
-    input wire        rst,
-    input wire        clk,
-    input wire [31:0] din,
-    input wire        pipeline_stop,     //停顿
-    output reg [31:0] pc
+
+// PC 
+module PC (
+    input   wire          pc_rst,
+    input   wire          pc_clk,
+    input   wire          stop,
+    input   wire  [31:0]  din,
+    output  reg   [31:0]  pc
 );
 
-    always @ (posedge clk or posedge rst) begin
-        if(rst)                 pc <= 32'h0000_0000;
-        else if(pipeline_stop)  pc <= pc;
-        else                    pc <= din;
+always @(posedge pc_clk or posedge pc_rst) begin
+    if (pc_rst) begin
+        pc <= 32'b0;
+    end 
+    
+    else if (stop) begin
+        pc <= pc;
     end
+    
+    else if (pc_clk) begin
+        pc <= din;
+    end
+end
+
 
 endmodule

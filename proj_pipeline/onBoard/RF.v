@@ -1,69 +1,88 @@
+`timescale 1ns / 1ps
+
 `include "defines.vh"
 
-module RF(
-    //时钟和复位信号
-    input wire  clk,
-    input wire  rst,
-    //输入信号
-    input wire  [4 :0] rR1,       
-    input wire  [4 :0] rR2,
-    input wire  [4 :0] wR,
-    input wire  [31:0] wD,
-    //控制信号
-    input wire         we,       //1 is write
-    //输出信号
-    output wire [31:0] rD1,
-    output wire [31:0] rD2
+// 通用寄存器堆模块
+module RF (
+    input   wire          rf_rst,
+    input   wire          rf_clk,
+
+    input   wire  [31:0]  inst1, // 用于译码阶段
+    input   wire  [31:0]  inst2, // 用于回写阶段
+
+    // 可能的rR1和rR2选择
+    input   wire rf_sel,
+
+    input   wire wb_ena,
+    input   wire  [4:0]   wb_reg,
+
+    // 用于load-use冒险，
+    // 在MEM阶段获取回写数据
+    // 需要支持字节/半字写回
+    input   wire  [4:0]   ID_wb_reg,
+    output  wire  [31:0]  ID_wb_reg_value,
+
+    // 可能的写回数据选择
+    input   wire  [2:0]   wD_sel,
+    input   wire  [31:0]  alu_c,
+    input   wire  [31:0]  sext2,
+    input   wire  [31:0]  pc4,
+    input   wire  [31:0]  rdo,
+
+    output  wire  [31:0]  rf_rD1,
+    output  wire  [31:0]  rf_rD2
+
+`ifdef RUN_TRACE
+    ,// 调试接口
+    output wire [31:0]  debug_wb_value
+`endif
 );
 
-    
-    //寄存器数组 
-    reg [31:0] regfile[31:0];
-    
-    //异步读：组合逻辑
-    assign rD1 = regfile[rR1];
-    assign rD2 = regfile[rR2];
+    // 32个32位寄存器
+    reg  [31:0]  register [0:31];
 
-    //同步写：时序逻辑
-    always @ (posedge clk or posedge rst) begin
-        if(rst) begin
-            regfile[0] <= 32'd0; 
-            regfile[1] <= 32'd0; 
-            regfile[2] <= 32'd0; 
-            regfile[3] <= 32'd0; 
-            regfile[4] <= 32'd0; 
-            regfile[5] <= 32'd0; 
-            regfile[6] <= 32'd0; 
-            regfile[7] <= 32'd0; 
-            regfile[8] <= 32'd0; 
-            regfile[9] <= 32'd0; 
-            regfile[10] <= 32'd0;
-            regfile[11] <= 32'd0;
-            regfile[12] <= 32'd0;
-            regfile[13] <= 32'd0;
-            regfile[14] <= 32'd0;
-            regfile[15] <= 32'd0;
-            regfile[16] <= 32'd0;
-            regfile[17] <= 32'd0;
-            regfile[18] <= 32'd0;
-            regfile[19] <= 32'd0;
-            regfile[20] <= 32'd0;
-            regfile[21] <= 32'd0;
-            regfile[22] <= 32'd0;
-            regfile[23] <= 32'd0;
-            regfile[24] <= 32'd0;
-            regfile[25] <= 32'd0;
-            regfile[26] <= 32'd0;
-            regfile[27] <= 32'd0;
-            regfile[28] <= 32'd0;
-            regfile[29] <= 32'd0;
-            regfile[30] <= 32'd0;
-            regfile[31] <= 32'd0;
-        end else if(we && (wR!=5'd0)) begin     //向x0中写入数据无效
-            regfile[wR] <= wD;
+    // 指令字段提取
+    wire [4:0] reg1 = inst1[9:5];    // rj
+    wire [4:0] reg2 = inst1[14:10];  // rk
+    wire [4:0] reg3 = inst1[4:0];    // rd
+
+    assign ID_wb_reg_value = register[ID_wb_reg];
+
+    // 读操作为非阻塞
+    // 读出寄存器1
+    assign rf_rD1 = register[reg1];
+
+    // 读出寄存器2
+    assign rf_rD2 = (rf_sel == `RF_SEL_RK) ? register[reg2] :
+                    (rf_sel == `RF_SEL_RD) ? register[reg3] :
+                    32'b0;
+
+    // 写回数据选择
+    wire [31:0] wb_value = 
+                        (wD_sel == `WB_SEL_ALU_RESULT) ? alu_c :
+                        (wD_sel == `WB_SEL_EXT2_RESULT) ? sext2 :
+                        (wD_sel == `WB_SEL_DRAM_BYTE) ? {register[wb_reg][31:8], rdo[7:0]} :
+                        (wD_sel == `WB_SEL_DRAM_HALF) ? {register[wb_reg][31:16], rdo[15:0]} :
+                        (wD_sel == `WB_SEL_DRAM_WORD) ? rdo :
+                        (wD_sel == `WB_SEL_INST) ? {inst2[24:5], 12'b0} :
+                        (wD_sel == `WB_SEL_PC4_RD) ? pc4 :
+                        (wD_sel == `WB_SEL_PC4_R1) ? pc4 :
+                        32'b0; 
+
+    always @(posedge rf_rst or posedge rf_clk) begin
+        if (rf_rst) begin
+            // 复位时只清零r0
+            register[0] <= 32'b0;
         end else begin
-            regfile[0] <= 32'd0;    
+            if (wb_ena && wb_reg != 0) begin
+                // 不允许修改r0
+                register[wb_reg] <= wb_value;
+            end
         end
     end
+
+`ifdef RUN_TRACE
+    assign debug_wb_value = wb_value;
+`endif
 
 endmodule
